@@ -1,10 +1,12 @@
 import time
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional, Union
+from typing import Any, ClassVar, Dict, Optional, Union
 
 import boto3
 import botocore
 from boto3.dynamodb.conditions import And, Attr, ConditionExpressionBuilder, Key, Not, Or
+from botocore.config import Config
 from ddbcereal import Deserializer, Serializer
 from ddbcereal.types import PythonNumber
 from requests import RequestException
@@ -66,6 +68,7 @@ def make_expression(filter_expression: dict, is_key: bool = False) -> Attr:
         return op(attr, value)
 
 
+@dataclass
 class DynamoDB:
     """Base for communications with DynamoDB.
 
@@ -73,22 +76,24 @@ class DynamoDB:
         KeyError: 'Item' not found in response for _read_item or 'Items' in _read_items.
     """
 
-    DATE_FORMAT = "%Y%m%d"
-    YEAR_WEEK_FORMAT = "%Y%W"
-    YEAR_MONTH_FORMAT = "%Y%m"
+    DATE_FORMAT: ClassVar[str] = "%Y%m%d"
+    YEAR_WEEK_FORMAT: ClassVar[str] = "%Y%W"
+    YEAR_MONTH_FORMAT: ClassVar[str] = "%Y%m"
 
-    def __init__(
-        self, table_name: str, config, credentials
-    ) -> None:  # TODO: config class type hint
-        self.table_name = table_name  # TODO: make a list of table names
+    table_name: str  # TODO: change this a list of tables
+    credentials: Union[Dict, None] = None
+    config: Optional[botocore.client.Config] = None  # TODO: should be able to pass a file
 
-        self.__client = boto3.client("dynamodb", config=config, credentials=credentials)
+    def __post_init__(self):
         self.__exp_builder = ConditionExpressionBuilder()
-
         self.__serializer = Serializer()
         self.__deserializer = Deserializer(number_type=PythonNumber.INT_OR_DECIMAL)
 
-        # self.__injector = TransformationInjector()
+        self._client = boto3.client(
+            "dynamodb",
+            config=self.config if self.config else None,
+            **self.credentials if self.credentials else {},
+        )
 
     def __serialize(self, value: Any, explicit_value: bool = False) -> Union[dict, list]:
         """Serializes value to DynamoDB structure.
@@ -119,7 +124,7 @@ class DynamoDB:
             return self.__deserializer.deserialize(value)
 
     def read_item(self, key: str, time: int) -> dict:
-        response = self.__client.get_item(
+        response = self._client.get_item(
             TableName=self.table_name, Key=DynamoDB.__serialize({"key": key, "time": time})
         )
 
@@ -240,7 +245,7 @@ class DynamoDB:
         parse_more = True
 
         while parse_more:
-            response = self.__client.query(TableName=self.table_name, **kwargs)
+            response = self._client.query(TableName=self.table_name, **kwargs)
             items.extend(self.__deserialize(response["Items"]))
             last_key = response.get("LastEvaluatedKey", {})
             parse_more = ((limit and len(items) < limit) or limit is None) and last_key
@@ -254,7 +259,7 @@ class DynamoDB:
 
     def delete(self, key: str, time: int) -> dict:
         """Delete item and return its values."""
-        response = self.__client.delete_item(
+        response = self._client.delete_item(
             TableName=self.table_name,
             Key=self.__serialize({"key": key, "time": time}),
             ReturnValues="ALL_OLD",
@@ -311,7 +316,7 @@ class DynamoDB:
             data["updated_at"] = item["updated_at"] = int(datetime.utcnow().timestamp())
 
         normalized_item = self.__serialize(normalize_dynamodb_write(item))
-        old_values = self.__client.put_item(
+        old_values = self._client.put_item(
             TableName=self.table_name,
             Item=normalized_item,
             ReturnValues=return_values,
@@ -341,7 +346,7 @@ class DynamoDB:
             split_items = [items]
 
         for batch in split_items:
-            response = self.__client.batch_write_item(RequestItems={self.table_name: batch})
+            response = self._client.batch_write_item(RequestItems={self.table_name: batch})
 
             # If batch read exceeded limits and returned UnprocessedKeys, add them to read queue.
             unprocessed_keys = response.get("UnprocessedKeys", {})
@@ -381,7 +386,7 @@ class DynamoDB:
             request_params = {}
 
         for batch in split_items:
-            response = self.__client.batch_get_item(
+            response = self._client.batch_get_item(
                 RequestItems={self.table_name: {**request_params, "Keys": batch}}
             )
 
@@ -422,7 +427,7 @@ class DynamoDB:
         if attributes:
             kwargs["ExpressionAttributeNames"] = attributes
 
-        response = self.__client.update_item(
+        response = self._client.update_item(
             TableName=self.table_name,
             Key={"key": self.__serialize(key), "time": self.__serialize(time)},
             UpdateExpression=f"add {field} :value",
@@ -474,7 +479,7 @@ class DynamoDB:
             kwargs["ExpressionAttributeNames"] = attributes
 
         try:
-            response = self.__client.update_item(
+            response = self._client.update_item(
                 TableName=self.table_name,
                 Key={"key": self.__serialize(key), "time": self.__serialize(time)},
                 UpdateExpression=f"set {field} = if_not_exists({field}, :value)",
@@ -494,4 +499,12 @@ class DynamoDB:
 
 
 if __name__ == "__main__":
-    pass
+    dynamodb = DynamoDB(
+        table_name="test", config=Config(retries={"max_attempts": 5, "mode": "standard"})
+    )
+
+    dynamodb.write(
+        key="test",
+        time=0,
+        attributes={"foo": "bar", "baz": 1, "qux": {"quux": "quuz"}},
+    )
