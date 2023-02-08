@@ -71,9 +71,9 @@ class Table:
         time_end: int = None,
         time_ascending: bool = False,
     ) -> list:
-        return self.read_items_more(key, filters, time_start, time_end, time_ascending)[0]
+        return self._read_items_more(key, filters, time_start, time_end, time_ascending)[0]
 
-    def read_items_more(
+    def _read_items_more(
         self,
         key: str,
         filters: list = None,
@@ -264,9 +264,9 @@ class Table:
             return
 
         if write_op:
-            items = [{"PutRequest": {"Item": self._serialize((item))}} for item in items]
+            items = [{"PutRequest": {"Item": self._serialize(item)}} for item in items]
         else:
-            items = [{"DeleteRequest": {"Key": self._serialize((item))}} for item in items]
+            items = [{"DeleteRequest": {"Key": self._serialize(item)}} for item in items]
 
         # If given list exceeds 25 items, need to split it into multiple batch reads,
         # since AWS only supports maximum of 25 items or 16MB batch reads.
