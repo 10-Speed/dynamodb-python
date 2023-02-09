@@ -1,0 +1,69 @@
+[tool.poetry]
+name = "dynamodb-python"
+version = "0.1.0"
+description = ""
+authors = ["domas-v <domas.vaitmonas93@gmail.com>"]
+readme = "README.md"
+packages = [{include = "dynamodb_python"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+ddbcereal = "^2.1.1"
+botocore = "^1.29.65"
+boto3 = "^1.26.65"
+requests = "^2.28.2"
+
+
+[tool.poetry.group.dev.dependencies]
+flake8 = "^6.0.0"
+mypy = "^1.0.0"
+black = "^23.1.0"
+isort = "^5.12.0"
+pre-commit = "^3.0.4"
+
+
+[tool.poetry.group.debug.dependencies]
+ipython = "^8.9.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.black]
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+multi_line_output = 3
+ensure_newline_before_comments = false
+line_length = 100
+include = '\.pyi?$'
+force_exclude = '''
+^/(
+    \.git
+| \.hg
+| \.mypy_cache
+| \.tox
+| _build
+| buck-out
+| build
+| dist
+| venv
+| .venv
+)/
+'''
+
+
+[tool.isort]
+profile = "black"
+line_length = 100
+lines_after_imports = 2
+
+
+[tool.mypy]
+strict = false
+allow_redefinition = true
+show_error_codes = true
+implicit_reexport = true
+warn_no_return = false
+exclude = ["**/.venv"]
