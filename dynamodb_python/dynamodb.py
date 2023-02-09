@@ -4,8 +4,9 @@ from typing import ClassVar, Dict, List, Optional
 import boto3
 import botocore
 from botocore.config import Config
-from table import Table
-from utils import sanitize_name
+
+from .table import Table
+from .utils import sanitize_name
 
 
 AWS_TABLENAME_KEY = "TableNames"

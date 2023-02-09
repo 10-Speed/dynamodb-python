@@ -9,7 +9,8 @@ from boto3.dynamodb.conditions import And, ConditionExpressionBuilder, Key
 from ddbcereal import Deserializer, Serializer
 from ddbcereal.types import PythonNumber
 from requests import RequestException
-from utils import get_logical_operation, make_expression, normalize_dynamodb_write, split_list
+
+from .utils import get_logical_operation, make_expression, normalize_dynamodb_write, split_list
 
 
 @dataclass()
