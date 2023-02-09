@@ -43,20 +43,20 @@ dynamodb = DynamoDB()
 table = dynamodb.table_name
 ```
 
-1. And then you can get an item like this:
+And then you can get an item like this:
 
 ```python
-table.read_item(key="key", time=timestamp)
+table.read_item(key={"partition_key": "key", "sort_key": "sort_key" })  # NOTE that sort_key is optional
 ```
 
-2. Or you can get a list of items like this:
+Or you can get a list of items with the same key like this:
 
 ```python
-table.read_items(key="key")
+table.read_items(key={"partition_key": "key"})  # NOTE that you can also pass in boto3 condition key 
 ```
 
-3. Or you can write an item like this:
+Or you can write an item like this:
 
 ```python
-table.write(key="key", time=timestamp, data={"data": "data"})
+table.write(key={"partition_key": "key", "sort_key": "sort_key"}, data={"data": "data"})
 ```

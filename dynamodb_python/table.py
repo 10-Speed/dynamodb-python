@@ -61,7 +61,7 @@ class Table:
 
     def read_items(
         self,
-        key: Tuple[str, str],
+        key: Union[Dict, Key],
         filters: Optional[List] = None,
         ascending: Optional[bool] = False,
     ) -> list:
