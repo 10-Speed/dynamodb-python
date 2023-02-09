@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 from itertools import islice
 from typing import Any, Iterable
@@ -90,7 +91,4 @@ def make_expression(filter_expression: dict, is_key: bool = False) -> Attr:
 
 def sanitize_name(name: str) -> str:
     """Sanitize name to be used as a key in DynamoDB."""
-    chars_to_replace = [" ", "-", "."]
-    for char in chars_to_replace:
-        name = name.replace(char, "_")
-    return name
+    return re.sub(r"[-\.]", "_", name)

@@ -8,7 +8,6 @@ from table import Table
 from utils import sanitize_name
 
 
-AUTH_NAME = "SYSTEM"  # TODO: change this
 AWS_TABLENAME_KEY = "TableNames"
 
 
