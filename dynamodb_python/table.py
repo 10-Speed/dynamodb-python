@@ -70,15 +70,18 @@ class Table:
 
     def _read_items_more(
         self,
-        key: Union[Key, Tuple[str, str]],
+        key: Union[Key, Dict],
         filters: Optional[List] = None,
         ascending: bool = False,
         limit: int = None,
         last: Dict = None,
     ) -> tuple:
         """Read items with given key and filters. Key and filters can be a key expression"""
-        if isinstance(key, Tuple):
-            key_exp = Key(key[0]).eq(key[1])
+        if isinstance(key, Dict):
+            key_ = tuple(key.keys())[0]
+            key_exp = Key(key_).eq(key[key_])
+        else:
+            key_exp = key
 
         kwargs = dict(ExpressionAttributeNames={}, ExpressionAttributeValues={})
 
