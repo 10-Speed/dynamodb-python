@@ -1,7 +1,7 @@
-import datetime
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Union
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import boto3
 import botocore
@@ -10,9 +10,6 @@ from ddbcereal import Deserializer, Serializer
 from ddbcereal.types import PythonNumber
 from requests import RequestException
 from utils import get_logical_operation, make_expression, normalize_dynamodb_write, split_list
-
-
-AUTH_NAME = "SYSTEM"  # TODO: change this
 
 
 @dataclass()
@@ -25,7 +22,7 @@ class Table:
         self._serializer = Serializer()
         self._deserializer = Deserializer(number_type=PythonNumber.INT_OR_DECIMAL)
 
-    def _serialize(self, value: Any, explicit_value: bool = False) -> Union[dict, list]:
+    def _serialize(self, value: Any, explicit_value: bool = False) -> Union[Dict, List]:
         """Serializes value to DynamoDB structure.
 
         Explicit value indicates that this value (list or dict) is a value.
@@ -39,7 +36,7 @@ class Table:
         else:
             return self._serializer.serialize(value)
 
-    def _deserialize(self, value: Union[dict, list], explicit_value: bool = False) -> Any:
+    def _deserialize(self, value: Union[Dict, List], explicit_value: bool = False) -> Any:
         """Serializes value to DynamoDB structure.
 
         Explicit value indicates that this value (list or dict) is a value.
@@ -53,9 +50,9 @@ class Table:
         else:
             return self._deserializer.deserialize(value)
 
-    def read_item(self, keys: Dict) -> Dict:
+    def read_item(self, key: Dict) -> Dict:
         """Read item with given keys. Must contain partition key and sort key if applicable."""
-        response = self._client.get_item(TableName=self.tablename, Key=self._serialize(keys))
+        response = self._client.get_item(TableName=self.tablename, Key=self._serialize(key))
 
         if "Item" not in response:
             raise KeyError("Item was not found.")
@@ -64,35 +61,28 @@ class Table:
 
     def read_items(
         self,
-        key: str,
-        filters: list = None,
-        time_start: int = None,
-        time_end: int = None,
-        time_ascending: bool = False,
+        key: Tuple[str, str],
+        filters: Optional[List] = None,
+        ascending: Optional[bool] = False,
     ) -> list:
-        return self._read_items_more(key, filters, time_start, time_end, time_ascending)[0]
+        """Read items with given key and filters. Key can be a key expression"""
+        return self._read_items_more(key, filters, ascending)[0]
 
     def _read_items_more(
         self,
-        key: str,
-        filters: list = None,
-        time_start: int = None,
-        time_end: int = None,
-        time_ascending: bool = False,
+        key: Union[Key, Tuple[str, str]],
+        filters: Optional[List] = None,
+        ascending: bool = False,
         limit: int = None,
-        last: dict = None,
+        last: Dict = None,
     ) -> tuple:
-        """Read items with given time_start or/and time_end and time them accordingly."""
-        key_exp = Key("key").eq(key)
-        if time_start is not None and time_end is not None:
-            key_exp &= Key("time").between(time_start, time_end)
-        elif time_start is not None:
-            key_exp &= Key("time").gte(time_start)
-        elif time_end is not None:
-            key_exp &= Key("time").lte(time_end)
+        """Read items with given key and filters. Key and filters can be a key expression"""
+        if isinstance(key, Tuple):
+            key_exp = Key(key[0]).eq(key[1])
 
         kwargs = dict(ExpressionAttributeNames={}, ExpressionAttributeValues={})
 
+        # TODO: rewrite this logic
         if filters:
             filter_exp = None
             conditional_filter_exp = None
@@ -145,7 +135,7 @@ class Table:
         kwargs.update(
             dict(
                 KeyConditionExpression=key_exp.condition_expression,
-                ScanIndexForward=time_ascending,
+                ScanIndexForward=ascending,
             )
         )
         kwargs["ExpressionAttributeNames"].update(key_exp.attribute_name_placeholders)
@@ -186,63 +176,22 @@ class Table:
             return truncated_items, last_key
         return items, self._deserialize(last_key)
 
-    def delete(self, key: str, time: int) -> dict:
-        """Delete item and return its values."""
-        response = self._client.delete_item(
-            TableName=self.tablename,
-            Key=self._serialize(({"key": key, "time": time})),
-            ReturnValues="ALL_OLD",
-        )
-        if "Attributes" not in response:
-            raise KeyError("Key(%s) and time(%s) was not found." % (key, time))
-        return self._deserialize(response["Attributes"])
-
-    def delete_list(self, keys: list, time: int) -> dict:
-        """Delete same "time" from multiple keys."""
-        response = {}
-        for key in keys:
-            response = self.delete(key, time)
-        return response
-
-    def write_list(self, keys: list, time: int, data: dict) -> dict:
-        """Write same data with same "time" to multiple keys."""
-        response = {}
-        for key in keys:
-            response = self.write(key, time, data)
-        return response
-
-    def exists(self, key: str, time: int) -> bool:
-        """Check whether item with such key and "time" exists."""
-        try:
-            self.read_item(key, time)
-            return True
-        except KeyError:
-            return False
-
     def write(
         self,
-        key: str,
-        time: int,
-        data: dict,
+        key: Dict,
+        data: Dict,
         return_old_values: bool = False,
-        ttl: datetime = None,
+        ttl: Tuple[str, datetime] = None,
     ) -> dict:
-        """Writing to DynamoDB database"""
-        item = {**data, "key": key, "time": time}
+        """Writing to DynamoDB database
+        Can pass a ttl tuple (attribute_name, datetime) to set a ttl on the item.
+        Optionally returns old values if return_old_values is True"""
+        item = {**key, **data}
 
         if ttl:
-            item["ttl"] = int(ttl.timestamp())
+            item[ttl[0]] = int(ttl[1].timestamp())
 
         return_values = "ALL_OLD" if return_old_values else "NONE"
-
-        # update updated_by. updated_at fields before writing.
-        if "updated_by" in item:
-            try:
-                data["updated_by"] = item["updated_by"] = AUTH_NAME
-            except TypeError:
-                data["updated_by"] = item["updated_by"] = "System"
-        if "updated_at" in item:
-            data["updated_at"] = item["updated_at"] = int(datetime.utcnow().timestamp())
 
         normalized_item = self._serialize((normalize_dynamodb_write(item)))
         old_values = self._client.put_item(
@@ -256,7 +205,7 @@ class Table:
 
         return self._deserialize(normalized_item)
 
-    def write_batch(self, items: list, write_op: bool = True) -> None:
+    def write_batch(self, items: List, write_op: bool = True) -> None:
         """Write list of items."""
 
         if not items:
@@ -282,7 +231,7 @@ class Table:
             if unprocessed_keys:
                 split_items.append(unprocessed_keys[self.tablename]["Keys"])
 
-    def write_batch_migrate(self, items: list):
+    def write_batch_migrate(self, items: List):
         """Write list of items with write capacity exceptions in mind."""
         try:
             self.write_batch(items=items)
@@ -293,11 +242,44 @@ class Table:
             else:
                 print(err)
 
-    def delete_batch(self, keys: list):
+    def write_list(self, keys: List, data: Dict) -> Dict:
+        """Write same data with to multiple keys."""
+        response = {}
+        for key in keys:
+            response = self.write(key, data)
+        return response
+
+    def exists(self, key: Dict) -> bool:
+        """Check whether item with such key exists."""
+        try:
+            self.read_item(key)
+            return True
+        except KeyError:
+            return False
+
+    def delete(self, key: Dict) -> Dict:
+        """Delete item and return its values."""
+        response = self._client.delete_item(
+            TableName=self.tablename,
+            Key=self._serialize(key),
+            ReturnValues="ALL_OLD",
+        )
+        if "Attributes" not in response:
+            raise KeyError("Key was not found.")
+        return self._deserialize(response["Attributes"])
+
+    def delete_list(self, keys: List[Dict]) -> Dict:
+        """Delete multiple keys."""
+        response = {}
+        for key in keys:
+            response = self.delete(key)
+        return response
+
+    def delete_batch(self, keys: List[Dict]) -> None:
         """Delete given list of items."""
         self.write_batch(keys, write_op=False)
 
-    def read_batch(self, items: list, request_params: Optional[dict] = None) -> list:
+    def read_batch(self, items: List, request_params: Optional[Dict] = None) -> List:
         """Read records in batch based on given list of items. An item in this context is
         a dict with the key and time of required record in Dynamo."""
         all_responses = []
@@ -330,9 +312,7 @@ class Table:
         # Flatten all batch responses into a single list and return.
         return [item for batch in all_responses for item in batch]
 
-    def update(
-        self, key: str, field: str, value: int, time: Union[str, int], attributes: dict = None
-    ) -> dict:
+    def update(self, key: Dict, field: str, value: Any, attributes: Dict = None) -> Dict:
         """
         Updates given field with given value.
         Initializes field if it did not exist yet.
@@ -356,9 +336,10 @@ class Table:
         if attributes:
             kwargs["ExpressionAttributeNames"] = attributes
 
+        key_exp = {k: self._serialize(v) for k, v in key.items()}
         response = self._client.update_item(
             TableName=self.tablename,
-            Key={"key": self._serialize((key)), "time": self._serialize((time))},
+            Key=key_exp,
             UpdateExpression=f"add {field} :value",
             # TODO This will break if field is reserved keyword.
             #  botocore classes should be used for constructing those time of things.
@@ -371,27 +352,21 @@ class Table:
 
         return response["Attributes"]
 
-    def increment(
-        self, key: str, field: str, time: Union[str, int] = 0, attributes: dict = None
-    ) -> dict:
+    def increment(self, key: Dict, field: str, attributes: Dict = None) -> Dict:
         """
         Increment a value by one given access keys and a field. Nested fields are separated by dots:
             dict["a"]["b"] should be passed as field="a.b"
         """
-        return self.update(key, field, 1, time, attributes)
+        return self.update(key, field, 1, attributes)
 
-    def decrement(
-        self, key: str, field: str, time: Union[str, int] = 0, attributes: dict = None
-    ) -> dict:
+    def decrement(self, key: Dict, field: str, attributes: dict = None) -> Dict:
         """
         Decrement a value by one given access keys and a field. Nested fields are separated by dots:
             dict["a"]["b"] should be passed as field="a.b"
         """
-        return self.update(key, field, -1, time, attributes)
+        return self.update(key, field, -1, attributes)
 
-    def init_empty_map(
-        self, key: str, field: str, time: Union[str, int] = 0, attributes: dict = None
-    ) -> dict:
+    def init_empty_map(self, key: Dict, field: str, attributes: Dict = None) -> Dict:
         """Initialize a field with an empty map if it does not exist yet, otherwise do nothing.
 
         Attributes can be used to overcome DynamoDB limitation of string only fields.
@@ -407,10 +382,11 @@ class Table:
         if attributes:
             kwargs["ExpressionAttributeNames"] = attributes
 
+        key_exp = {k: self._serialize(v) for k, v in key.items()}
         try:
             response = self._client.update_item(
                 TableName=self.tablename,
-                Key={"key": self._serialize((key)), "time": self._serialize((time))},
+                Key=key_exp,
                 UpdateExpression=f"set {field} = if_not_exists({field}, :value)",
                 # TODO This will break if field is reserved keyword.
                 #  botocore classes should be used for constructing those sort of things.
