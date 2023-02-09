@@ -2,6 +2,10 @@
 
 ## Installation
 
+```bash
+pip install dynamodb-python
+```
+
 ## Requirements
 
 ### Dependencies
