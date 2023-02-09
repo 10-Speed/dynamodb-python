@@ -45,4 +45,6 @@ class DynamoDB:
 if __name__ == "__main__":
     # test example
     dynamodb = DynamoDB(config=Config(retries={"max_attempts": 5, "mode": "standard"}))
-    dynamodb.table_name.write(key="test", time=50, data={})
+    dynamodb.test_table.write(
+        key={"partition_key": "key_value", "sort_key": 99}, data={"test_data": "1234"}
+    )
