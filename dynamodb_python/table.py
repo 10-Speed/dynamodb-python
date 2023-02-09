@@ -1,7 +1,7 @@
 import datetime
 import time
 from dataclasses import dataclass
-from typing import Any, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import boto3
 import botocore
@@ -53,13 +53,12 @@ class Table:
         else:
             return self._deserializer.deserialize(value)
 
-    def read_item(self, key: str, time: int) -> dict:
-        response = self._client.get_item(
-            TableName=self.tablename, Key=self._serialize({"key": key, "time": time})
-        )
+    def read_item(self, keys: Dict) -> Dict:
+        """Read item with given keys. Must contain partition key and sort key if applicable."""
+        response = self._client.get_item(TableName=self.tablename, Key=self._serialize(keys))
 
         if "Item" not in response:
-            raise KeyError("Key(%s) and time(%s) was not found." % (key, time))
+            raise KeyError("Item was not found.")
 
         return self._deserialize(response["Item"])
 
