@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "dynamodb-python"
-version = "0.1.2"
+version = "0.1.3"
 description = ""
 authors = ["domas-v <domas.vaitmonas93@gmail.com>"]
 readme = "README.md"
