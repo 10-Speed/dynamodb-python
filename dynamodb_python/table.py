@@ -216,7 +216,7 @@ class Table:
             return
 
         if write_op:
-            items = [{"PutRequest": {"Item": self._serialize(item)}} for item in items]
+            items = [{"PutRequest": {"Item": self._serialize((normalize_dynamodb_write(item)))}} for item in items]
         else:
             items = [{"DeleteRequest": {"Key": self._serialize(item)}} for item in items]
 
