@@ -7,28 +7,39 @@ from boto3.dynamodb.conditions import And, Attr, Key, Not, Or
 from requests import RequestException
 
 
-def normalize_dynamodb_write(obj: Any) -> Any:
-    """All dictionary keys need to be strings in DynamoDB."""
+PATTERN = r"[^A-Za-z_\d]"  # matches any non-alphanumeric character except underscore
 
-    def normalize_values(obj: Any) -> Any:
+
+def normalize_dynamodb_write(obj: Any) -> Any:
+    """All dictionary keys need to be strings in DynamoDB.
+    It cannot also contain any non-alphanumeric characters except underscore and dot. """
+
+    def sanitize_key(key: str) -> str:
+        """Sanitize key to be used as a key in DynamoDB."""
+
+        if not isinstance(key, str):
+            key = str(key)
+
+        return re.sub(PATTERN, "_", key)
+
+    def normalize_values(value: Any) -> Any:
         """DynamoDB does not support float, change to Decimal instead."""
-        if isinstance(obj, float):
-            return Decimal(str(obj))
-        return obj
+        if isinstance(value, float):
+            return Decimal(str(value))
+        elif isinstance(value, list):
+            return [normalize_values(item) for item in value]
+        elif isinstance(value, dict):
+            return normalize_dynamodb_write(value)
+        return value
 
     if isinstance(obj, dict):
-        for key in list(obj.keys()):
-            normalized = normalize_dynamodb_write(key)
-            obj[normalized] = (
-                normalize_dynamodb_write(obj[key])
-                if isinstance(obj[key], dict)
-                else normalize_values(obj[key])
-            )
-            if key is not normalized:
-                del obj[key]
-    elif isinstance(obj, int) or isinstance(obj, Decimal) or isinstance(obj, float):
-        return str(obj)
-    return obj
+        normalized_obj = {}
+        for key, value in obj.items():
+            sanitized_key = sanitize_key(key)
+            normalized_obj[sanitized_key] = normalize_values(value)
+        return normalized_obj
+    else:
+        return normalize_values(obj)
 
 
 def split_list(it: Iterable, size: int) -> list:
